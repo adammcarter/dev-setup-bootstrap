@@ -218,7 +218,26 @@ t_device_flow_waits_while_pending() {
     teardown_sandbox
 }
 
-# ── 7 · failures say what actually went wrong ───────────────────────────────
+# ── 7 · nothing to ask on means fail fast, not hang ────────────────────────
+# `test -r /dev/tty` is true whenever the device node is readable by permission,
+# which it is even in a session that has no controlling terminal to open. Trust
+# it and a piped or automated run walks into a browser sign-in nobody can
+# approve, then blocks until the code expires.
+t_no_terminal_fails_fast() {
+    setup_sandbox; load
+    can_ask() { return 1; }
+    browser_login() { echo "BROWSER-LOGIN-RAN" >> "$LOG"; TOKEN=should-not-happen; }
+    local out="$SANDBOX/nt.out"
+    interactive_login >"$out" 2>&1 && local r=proceeded || local r=refused
+    check "with nothing to ask on, it refuses"        "$r" "refused"
+    grep -q 'BROWSER-LOGIN-RAN' "$LOG" && local b=yes || local b=no
+    check "no unapprovable sign-in is started"        "$b" "no"
+    grep -q 'GH_TOKEN' "$out" && local g=yes || local g=no
+    check "it says how to supply a credential instead" "$g" "yes"
+    teardown_sandbox
+}
+
+# ── 8 · failures say what actually went wrong ───────────────────────────────
 t_clone_failure_names_the_cause() {
     setup_sandbox; stub_git_real; load
     stub git 'case "$*" in *clone*) exit 128;; *) exit 0;; esac'

@@ -215,16 +215,34 @@ paste_token() {
     note "$PAT_URL"
     command -v open >/dev/null 2>&1 && open "$PAT_URL" >/dev/null 2>&1
     printf '\n  Paste the token (it stays hidden): '
-    local tok; read -rs tok </dev/tty; printf '\n\n'
+    local tok=""; ask tok -s || { warn "could not read the token"; return 1; }; printf '\n\n'
     [ -n "$tok" ] || { warn "nothing pasted"; return 1; }
     adopt "the token you pasted" "$tok"
 }
 
+# Whether there is anyone to ask. `test -r /dev/tty` answers a different
+# question — it says the device node is readable, which stays true in a session
+# that has no controlling terminal to open. Opening it is the real test, and
+# getting this wrong sends an unattended run into a browser sign-in nobody can
+# approve, where it blocks until the code expires.
+can_ask() {
+    { exec 3</dev/tty; } 2>/dev/null || return 1
+    exec 3<&-
+    return 0
+}
+
+ask() { # ask <varname> [-s]
+    local __v="$1"; shift
+    if ! read -r "$@" "$__v" </dev/tty; then return 1; fi
+}
+
 interactive_login() {
-    if [ ! -t 0 ] && [ ! -r /dev/tty ]; then
+    if ! can_ask; then
         fail "no GitHub credential, and no terminal to ask on"
-        say "Set one and run this again:"
-        note "export GH_TOKEN=…   ($PAT_URL)"
+        say "Give it one and run the same command again:"
+        note "export GH_TOKEN=…"
+        say "Create the token here — the scopes are already filled in:"
+        note "$PAT_URL"
         return 1
     fi
 
@@ -233,7 +251,7 @@ interactive_login() {
         say "1) with your browser   ${D}— recommended, nothing to create or store${Z}"
         say "2) paste a token       ${D}— if you would rather manage it yourself${Z}"
         printf '\n  Choose [1]: '
-        local choice; read -r choice </dev/tty || choice=1
+        local choice=""; ask choice || { warn "could not read your answer"; return 1; }
         printf '\n'
         case "${choice:-1}" in
             1|"") browser_login && return 0 ;;
@@ -241,7 +259,7 @@ interactive_login() {
             *)    warn "pick 1 or 2"; continue ;;
         esac
         printf '\n  Try again? [Y/n]: '
-        local again; read -r again </dev/tty || again=n
+        local again=""; ask again || return 1
         case "$again" in [Nn]*) return 1 ;; esac
     done
 }
